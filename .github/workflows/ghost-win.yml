@@ -1,6 +1,6 @@
 # Builds Ghost Desktop for Windows x64 and packs an installer (ghostsetup-x64.*.exe).
 #
-# Required repository secrets (Settings -> Secrets and variables -> Actions):
+# Optional repository secrets (without them the test credentials are used):
 #   TDESKTOP_API_ID    - api_id from https://my.telegram.org
 #   TDESKTOP_API_HASH  - api_hash from https://my.telegram.org
 #
@@ -40,8 +40,10 @@ jobs:
           API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
         run: |
           if [ -z "$API_ID" ] || [ -z "$API_HASH" ]; then
-            echo "::error::Add TDESKTOP_API_ID and TDESKTOP_API_HASH repository secrets (from my.telegram.org)."
-            exit 1
+            echo "::warning::No TDESKTOP_API_ID / TDESKTOP_API_HASH secrets: building with Telegram Desktop test credentials. Add your own from my.telegram.org for a real release."
+            echo "API_FLAGS=-D TDESKTOP_API_TEST=ON" >> $GITHUB_ENV
+          else
+            echo "API_FLAGS=-D TDESKTOP_API_ID=$API_ID -D TDESKTOP_API_HASH=$API_HASH" >> $GITHUB_ENV
           fi
 
       - name: Prepare directories.
@@ -131,17 +133,13 @@ jobs:
           key: ${{ runner.os }}-x64-${{ env.QT }}-libs-${{ env.CACHE_KEY }}
 
       - name: Ghost Desktop build.
-        env:
-          API_ID: ${{ secrets.TDESKTOP_API_ID }}
-          API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
         run: |
           cd %TBUILD%\%REPO_NAME%\Telegram
 
           call configure.bat ^
             x64 ^
             %QT% ^
-            -D TDESKTOP_API_ID=%API_ID% ^
-            -D TDESKTOP_API_HASH=%API_HASH% ^
+            %API_FLAGS% ^
             -D CMAKE_CONFIGURATION_TYPES=Release ^
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
