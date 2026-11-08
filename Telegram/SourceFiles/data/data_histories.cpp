@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "base/unixtime.h"
 #include "base/random.h"
+#include "ghost/ghost_settings.h"
 #include "main/main_session.h"
 #include "window/notifications_manager.h"
 #include "history/history.h"
@@ -755,6 +756,21 @@ void Histories::sendReadRequest(not_null<History*> history, State &state) {
 	sendRequest(history, RequestType::ReadInbox, [=](Fn<void()> finish) {
 		DEBUG_LOG(("Reading: sending request invoked with till %1."
 			).arg(tillId.bare));
+		if (Ghost::Current().hideRead) {
+			// Ghost: keep the chat read locally, but don't tell the server.
+			// Finish asynchronously, after sendRequest() registers us.
+			crl::on_main(&session(), [=] {
+				if (const auto state = lookup(history)) {
+					if (state->sentReadTill == tillId) {
+						state->sentReadDone = true;
+						state->sentReadTill = 0;
+					}
+				}
+				sendReadRequests();
+				finish();
+			});
+			return mtpRequestId(0);
+		}
 		const auto finished = [=] {
 			const auto state = lookup(history);
 			Assert(state != nullptr);

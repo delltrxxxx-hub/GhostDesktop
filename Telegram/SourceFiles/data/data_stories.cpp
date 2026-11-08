@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_stories.h"
+#include "ghost/ghost_settings.h"
 
 #include "base/unixtime.h"
 #include "apiwrap.h"
@@ -1391,6 +1392,9 @@ void Stories::sendMarkAsReadRequest(
 		not_null<PeerData*> peer,
 		StoryId tillId) {
 	const auto peerId = peer->id;
+	if (Ghost::Current().hideStoryViews) {
+		return; // Ghost: don't mark stories as viewed.
+	}
 	_markReadRequests.emplace(peerId);
 	const auto finish = [=] {
 		_markReadRequests.remove(peerId);
@@ -1435,6 +1439,10 @@ void Stories::sendMarkAsReadRequests() {
 
 void Stories::sendIncrementViewsRequests() {
 	if (_incrementViewsPending.empty()) {
+		return;
+	}
+	if (Ghost::Current().hideStoryViews) {
+		_incrementViewsPending.clear(); // Ghost: don't count our views.
 		return;
 	}
 	struct Prepared {

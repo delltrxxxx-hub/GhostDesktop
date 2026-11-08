@@ -639,6 +639,8 @@ PRIVATE
     core/utils.cpp
     core/utils.h
     core/version.h
+    ghost/ghost_settings.cpp
+    ghost/ghost_settings.h
     core/websocket_client.cpp
     core/websocket_client.h
     countries/countries_manager.cpp
@@ -2847,7 +2849,7 @@ else()
         set(bundle_identifier "com.tdesktop.Telegram")
     endif()
     set(bundle_entitlements "Telegram.entitlements")
-    set(output_name "Telegram")
+    set(output_name "Ghost")
 endif()
 
 if (CMAKE_GENERATOR STREQUAL Xcode)
@@ -2893,7 +2895,7 @@ get_property(is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if (APPLE
     OR is_multi_config
     OR NOT CMAKE_EXECUTABLE_SUFFIX STREQUAL ""
-    OR NOT "${output_name}" STREQUAL "Telegram")
+    OR NOT "${output_name}" STREQUAL "Ghost")
     set(output_folder ${CMAKE_BINARY_DIR})
 else()
     set(output_folder ${CMAKE_BINARY_DIR}/bin)

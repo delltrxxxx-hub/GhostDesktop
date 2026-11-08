@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/emoji_interactions.h"
+#include "ghost/ghost_settings.h"
 
 #include "chat_helpers/stickers_emoji_pack.h"
 #include "history/history_item.h"
@@ -471,6 +472,9 @@ void EmojiInteractions::setWaitingForDownload(bool waiting) {
 }
 
 void EmojiInteractions::playStarted(not_null<PeerData*> peer, QString emoji) {
+	if (Ghost::Current().hideRead) {
+		return; // Ghost: don't report watched emoji.
+	}
 	auto &map = _playStarted[peer];
 	const auto i = map.find(emoji);
 	const auto now = crl::now();

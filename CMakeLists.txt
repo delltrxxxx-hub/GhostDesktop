@@ -19,8 +19,8 @@ endif()
 project(Telegram
     LANGUAGES C CXX
     VERSION ${desktop_app_version_cmake}
-    DESCRIPTION "Official Telegram Desktop messenger"
-    HOMEPAGE_URL "https://desktop.telegram.org"
+    DESCRIPTION "Ghost Desktop, an unofficial Telegram client"
+    HOMEPAGE_URL "https://github.com/delltrxxxx-hub/GhostDesktop"
 )
 
 if (APPLE)

@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common_session.h"
 
 #include "api/api_authorizations.h"
+#include "api/api_updates.h"
+#include "ghost/ghost_settings.h"
 #include "api/api_blocked_peers.h"
 #include "api/api_cloud_password.h"
 #include "api/api_global_privacy.h"
@@ -1133,6 +1135,74 @@ void BuildConfirmationExtensions(SectionBuilder &builder) {
 	builder.addDividerText(tr::lng_settings_edit_extensions_about());
 }
 
+void BuildGhostSection(SectionBuilder &builder) {
+	using Ghost::Tr;
+	const auto session = builder.session();
+
+	builder.addSkip();
+	builder.addSubsectionTitle({
+		.id = u"privacy/ghost"_q,
+		.title = rpl::single(Tr("Ghost mode", "Режим призрака")),
+		.keywords = { u"ghost"_q, u"online"_q, u"read"_q, u"typing"_q },
+	});
+
+	const auto add = [&](
+			const char *id,
+			const char *en,
+			const char *ru,
+			bool Ghost::Settings::*field) {
+		const auto toggle = builder.addButton({
+			.id = u"privacy/ghost/"_q + QString::fromLatin1(id),
+			.title = rpl::single(Tr(en, ru)),
+			.st = &st::settingsButtonNoIcon,
+			.toggled = rpl::single(Ghost::Current().*field),
+			.keywords = { u"ghost"_q },
+		});
+		if (!toggle) {
+			return;
+		}
+		toggle->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return toggled != (Ghost::Current().*field);
+		}) | rpl::on_next([=](bool toggled) {
+			Ghost::Update([&](Ghost::Settings &s) { s.*field = toggled; });
+			if (field == &Ghost::Settings::hideOnline) {
+				// Re-send the status right away with the new rule.
+				session->updates().updateOnline(crl::now());
+			}
+		}, toggle->lifetime());
+	};
+	add(
+		"online",
+		"Hide my online status",
+		"Скрывать мой статус «в сети»",
+		&Ghost::Settings::hideOnline);
+	add(
+		"read",
+		"Read messages secretly",
+		"Читать сообщения без «прочитано»",
+		&Ghost::Settings::hideRead);
+	add(
+		"typing",
+		"Hide \"typing...\"",
+		"Не показывать «печатает…»",
+		&Ghost::Settings::hideTyping);
+	add(
+		"stories",
+		"View stories secretly",
+		"Смотреть истории без просмотра",
+		&Ghost::Settings::hideStoryViews);
+
+	builder.addSkip();
+	builder.addDividerText(rpl::single(Tr(
+		"These switches only stop Ghost from reporting your own activity. "
+		"Sending a message still marks the chat as read and may show you "
+		"online for a moment.",
+		"Эти переключатели только перестают сообщать серверу о твоих "
+		"действиях. Если ты отправишь сообщение, чат всё равно станет "
+		"прочитанным, а ты можешь на миг появиться «в сети».")));
+}
+
 void BuildPrivacySecuritySectionContent(SectionBuilder &builder) {
 	auto updateOnTick = rpl::single(
 	) | rpl::then(base::timer_each(kUpdateTimeout));
@@ -1140,6 +1210,7 @@ void BuildPrivacySecuritySectionContent(SectionBuilder &builder) {
 		return rpl::duplicate(updateOnTick);
 	};
 
+	BuildGhostSection(builder);
 	BuildSecuritySection(builder, trigger());
 	BuildPrivacySection(builder);
 	BuildArchiveAndMuteSection(builder);

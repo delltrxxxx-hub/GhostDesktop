@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_replies_list.h"
+#include "ghost/ghost_settings.h"
 
 #include "history/history.h"
 #include "history/history_item.h"
@@ -959,6 +960,9 @@ void RepliesList::sendReadTillRequest() {
 	}
 	const auto api = &_history->session().api();
 	api->request(base::take(_readRequestId)).cancel();
+	if (Ghost::Current().hideRead) {
+		return; // Ghost: don't send read receipts for comments.
+	}
 
 	_readRequestId = api->request(MTPmessages_ReadDiscussion(
 		_history->peer->input(),

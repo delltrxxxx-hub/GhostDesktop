@@ -1,0 +1,193 @@
+# Builds Ghost Desktop for Windows x64 and packs an installer (ghostsetup-x64.*.exe).
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   TDESKTOP_API_ID    - api_id from https://my.telegram.org
+#   TDESKTOP_API_HASH  - api_hash from https://my.telegram.org
+#
+# The first run builds all third-party libraries (Qt, FFmpeg, WebRTC...) and
+# can take 4-6 hours. They are cached, so later runs take about 1 hour.
+
+name: Ghost Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    env:
+      PREPARE_PATH: "Telegram/build/prepare/prepare.py"
+      QT: qt6
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check API secrets.
+        shell: bash
+        env:
+          API_ID: ${{ secrets.TDESKTOP_API_ID }}
+          API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
+        run: |
+          if [ -z "$API_ID" ] || [ -z "$API_HASH" ]; then
+            echo "::error::Add TDESKTOP_API_ID and TDESKTOP_API_HASH repository secrets (from my.telegram.org)."
+            exit 1
+          fi
+
+      - name: Prepare directories.
+        run: |
+          mkdir %userprofile%\TBuild\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
+
+      - name: Get repository name.
+        shell: bash
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone.
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}
+
+      - name: First set up.
+        shell: bash
+        run: |
+          DOCPATH=$TBUILD/$REPO_NAME/docs/building-win.md
+          SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+
+          echo "$(sha256sum $TBUILD/$REPO_NAME/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
+          echo "$SDK" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
+
+          VERSION="$(grep 'AppVersionStr = ' $TBUILD/$REPO_NAME/Telegram/SourceFiles/core/version.h | sed -r 's/.*"(.*)".*/\1/')"
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+
+          git config --global user.email "ghost@example.com"
+          git config --global user.name "Ghost CI"
+
+      - uses: Eden-CI/msvc-dev-cmd@master
+        name: Native Tools Command Prompt.
+        with:
+          arch: x64
+          sdk: ${{ env.SDK }}
+          toolset: '14.44'
+
+      - name: NuGet sources.
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: Restore ThirdParty cache.
+        id: cache-third-party
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ runner.os }}-x64-third-party-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.os }}-x64-third-party-
+
+      - name: Restore Libraries cache.
+        id: cache-libs
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.LibrariesPath }}
+          key: ${{ runner.os }}-x64-${{ env.QT }}-libs-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.os }}-x64-${{ env.QT }}-libs-
+
+      - name: Libraries.
+        run: |
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-release silent %QT%
+
+      - name: Free up some disk space.
+        shell: bash
+        run: find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.dll' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' -o -path '*/plugins/*' -o -path '*/mkspecs/*' ')' -type f ')' -o -empty ')' -delete
+
+      # Saved right after the libraries are ready, so a failed app build
+      # does not throw away hours of library compilation.
+      - name: Save ThirdParty cache.
+        if: steps.cache-third-party.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ runner.os }}-x64-third-party-${{ env.CACHE_KEY }}
+
+      - name: Save Libraries cache.
+        if: steps.cache-libs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}
+          key: ${{ runner.os }}-x64-${{ env.QT }}-libs-${{ env.CACHE_KEY }}
+
+      - name: Ghost Desktop build.
+        env:
+          API_ID: ${{ secrets.TDESKTOP_API_ID }}
+          API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
+        run: |
+          cd %TBUILD%\%REPO_NAME%\Telegram
+
+          call configure.bat ^
+            x64 ^
+            %QT% ^
+            -D TDESKTOP_API_ID=%API_ID% ^
+            -D TDESKTOP_API_HASH=%API_HASH% ^
+            -D CMAKE_CONFIGURATION_TYPES=Release ^
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          if errorlevel 1 exit /b 1
+
+          cmake --build ..\out --config Release --parallel
+          if errorlevel 1 exit /b 1
+
+      - name: Pack installer.
+        shell: pwsh
+        run: |
+          $release = "$env:TBUILD\$env:REPO_NAME\out\Release"
+          if (-not (Test-Path "$release\Ghost.exe")) { throw "Ghost.exe was not built" }
+
+          $d3d = Join-Path $env:WindowsSdkDir 'Redist\D3D\x64\d3dcompiler_47.dll'
+          New-Item -ItemType Directory -Force "$release\modules\x64\d3d" | Out-Null
+          Copy-Item $d3d "$release\modules\x64\d3d\"
+
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+
+          & $iscc `
+            "/DMyAppVersion=$env:APP_VERSION" `
+            "/DMyAppVersionFull=$env:APP_VERSION" `
+            "/DReleasePath=$release" `
+            "/DMyBuildTarget=win64" `
+            "$env:TBUILD\$env:REPO_NAME\Telegram\build\setup.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          Move-Item "$release\ghostsetup-x64.*.exe" artifact\
+          Compress-Archive -Path "$release\Ghost.exe", "$release\modules" `
+            -DestinationPath "artifact\Ghost-portable-x64.$env:APP_VERSION.zip"
+          Get-ChildItem artifact
+
+      - name: Upload artifact.
+        uses: actions/upload-artifact@v7
+        with:
+          name: Ghost-Desktop-x64
+          path: artifact\
+          retention-days: 14
+
+      - name: Publish release.
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: artifact/*

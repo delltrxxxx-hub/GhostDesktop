@@ -77,6 +77,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/editor/iv_editor_session.h"
 #include "ui/boxes/confirm_box.h"
 #include "apiwrap.h"
+#include "ghost/ghost_settings.h"
 #include "ui/text/format_values.h" // Ui::FormatPhone
 
 namespace Api {
@@ -1018,6 +1019,9 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 				int(config.offlineIdleTimeout - idle));
 			Assert(updateIn >= 0);
 		}
+	}
+	if (Ghost::Current().hideOnline) {
+		isOnline = false; // Ghost: always report offline.
 	}
 	auto ms = crl::now();
 	if (isOnline != _lastWasOnline

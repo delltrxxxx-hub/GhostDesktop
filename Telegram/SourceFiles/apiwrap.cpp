@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
+#include "ghost/ghost_settings.h"
 
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
@@ -1477,6 +1478,9 @@ void ApiWrap::markContentsRead(
 			markedIds.push_back(MTP_int(item->id));
 		}
 	}
+	if (Ghost::Current().hideRead) {
+		return; // Ghost: voice and video notes stay "unlistened" for others.
+	}
 	if (!markedIds.isEmpty()) {
 		request(MTPmessages_ReadMessageContents(
 			MTP_vector<MTPint>(markedIds)
@@ -1495,6 +1499,8 @@ void ApiWrap::markContentsRead(
 void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
 	if (!item->markContentsRead(true) || !item->isRegular()) {
 		return;
+	} else if (Ghost::Current().hideRead) {
+		return; // Ghost: keep it local.
 	}
 	const auto ids = MTP_vector<MTPint>(1, MTP_int(item->id));
 	if (const auto channel = item->history()->peer->asChannel()) {
